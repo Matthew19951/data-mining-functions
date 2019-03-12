@@ -1,0 +1,86 @@
+def ChiMegre(df, col, target, confidence=3.841, bins=10, samples=None):         # confidence,置信度阈值为3.841，自由度为1
+    if samples != None:                                                         # 是否采样
+        df = random.sample(df, n=samples)
+    else:
+        df
+
+    total = df.groupby(col)[target].count()                                     # 统计需分箱变量每个值数目
+    total = pd.DataFrame({"total":total})                                       # 创建一个DataFrame保存上个结果
+    bad = df.groupby(col)[target].sum()                                         # 统计需分箱变量中值为1的数量
+    bad = pd.DataFrame({"bad":bad})
+    regroup = total.merge(bad, left_index=True, right_index=True, how="inner")  # 组合total和bad
+    regroup.reset_index(inplace=True)
+    regroup["good"] = regroup["total"] - regroup["bad"]                         # 统计标签值为0的数量
+    regroup = regroup.drop("total", axis=1)                                     # 删除total列
+    regroup = np.array(regroup)                                                 # 转化为numpy,提高计算效率 col, bad, good
+    print("已经完成数据读入，正在计算数据初处理")
+
+    # 处理连续没有正样本或者负样本的区间，并进行区间合并（以免卡方值计算报错）
+    i = 0
+    while (i <= regroup.shape[0] - 2):
+        if ((regroup[i, 1]==0 and regroup[i+1, 1]==0) or (regroup[i, 2]==0 and regroup[i+1, 2]==0)):
+            regroup[i,1] = regroup[i,1] + regroup[i+1,1] # 负样本
+            regroup[i,2] = regroup[i,2] + regroup[i+1,2] # 正样本
+            regroup[i,0] = regroup[i,0] + regroup[i+1,0] # col
+            regroup = np.delete(regroup, i+1, 0)
+            i = i - 1
+        i = i + 1
+
+    # 相邻两个区间进行卡方值计算
+    chi_table = np.array([])                                                    # 创建一个数组保存相邻两个区间的卡方值
+    for i in np.arange(regroup.shape[0]-1):
+        chi = (regroup[i,1]*regroup[i+1,2]-regroup[i,2]*regroup[i+1,1])**2 \
+            *(regroup[i,1]+regroup[i,2]+regroup[i+1,1]+regroup[i+1,2])/ \
+                ((regroup[i,1]+regroup[i,2])*(regroup[i+1,1]+regroup[i+1,2])* \
+                (regroup[i,1]+regroup[i+1,1])*(regroup[i,2]+regroup[i+1,2]))
+        chi_table = np.append(chi_table,chi)
+    print("已完成数据初处理，正在进行卡方分箱核心操作")
+
+    # 把卡方值最小的两个区间进行合并（卡方分箱合并）
+    while (1):
+        if (len(chi_table) <= (bins - 1) and min(chi_table) > confidence):
+            break
+        chi_min_index = np.argwhere(chi_table==min(chi_table))[0]               # 取出最小卡方值的索引
+        regroup[chi_min_index,1] = regroup[chi_min_index,1] + regroup[chi_min_index+1,1]
+        regroup[chi_min_index,2] = regroup[chi_min_index,2] + regroup[chi_min_index+1,2]
+        regroup[chi_min_index,0] = regroup[chi_min_index+1,0]
+        regroup = np.delete(regroup, chi_min_index+1, 0)
+
+        if (chi_min_index == regroup.shape[0]-1):                               #尝试最后两个区间
+            # 计算合并后当前区域与前一个区域的卡方值并合并
+            chi_table[chi_min_index-1] = (regroup[chi_min_index - 1, 1] * regroup[chi_min_index, 2] - regroup[chi_min_index - 1, 2] * regroup[chi_min_index, 1]) ** 2 \
+                    * (regroup[chi_min_index - 1, 1] + regroup[chi_min_index - 1, 2] + regroup[chi_min_index, 1] + regroup[chi_min_index, 2]) / \
+                    ((regroup[chi_min_index - 1, 1] + regroup[chi_min_index - 1, 2]) * (regroup[chi_min_index, 1] + regroup[chi_min_index, 2]) * (regroup[chi_min_index - 1, 1] + regroup[chi_min_index, 1]) * (regroup[chi_min_index - 1, 2] + regroup[chi_min_index, 2]))
+            chi_table = np.delete(chi_table,chi_min_index,0)
+        else:
+            chi_table[chi_min_index - 1] = (regroup[chi_min_index - 1, 1] * regroup[chi_min_index, 2] -regroup[chi_min_index - 1, 2] * regroup[chi_min_index, 1]) ** 2 \
+                    * (regroup[chi_min_index - 1, 1] + regroup[chi_min_index - 1, 2] +regroup[chi_min_index, 1] + regroup[chi_min_index, 2]) / \
+                    ((regroup[chi_min_index - 1, 1] + regroup[chi_min_index - 1, 2]) * (regroup[chi_min_index, 1] + regroup[chi_min_index, 2]) * (regroup[chi_min_index - 1, 1] + regroup[chi_min_index, 1]) * (regroup[chi_min_index - 1, 2] + regroup[chi_min_index, 2]))
+
+            chi_table[chi_min_index] = (regroup[chi_min_index, 1] * regroup[chi_min_index+1, 2] - regroup[chi_min_index, 2] * regroup[chi_min_index+1, 1]) ** 2 \
+                    * (regroup[chi_min_index, 1] + regroup[chi_min_index, 2] + regroup[chi_min_index+1, 1] + regroup[chi_min_index+1, 2]) / \
+                    ((regroup[chi_min_index, 1] + regroup[chi_min_index, 2]) * (regroup[chi_min_index+1, 1] + regroup[chi_min_index+1, 2]) * (regroup[chi_min_index, 1] + regroup[chi_min_index+1, 1]) * (regroup[chi_min_index, 2] + regroup[chi_min_index+1, 2]))
+            chi_table = np.delete(chi_table, chi_min_index+1,axis=0)
+    print("已完成卡方核心分箱，正在保存结果")
+
+    # 保存结果成一个数据框
+    result = pd.DataFrame()
+    result[col] = [col] * regroup.shape[0]                                      #结果表第一列：变量名称
+    list_tmp = []
+    for i in np.arange(regroup.shape[0]):
+        if i == 0:
+            x = '0' + ','+ str(regroup[i,0])
+        elif i == regroup.shape[0]-1:
+            x = str(regroup[i-1,0]) + "+"
+        else:
+            x = str(regroup[i-1,0]) + ","+ str(regroup[i,0])
+        list_tmp.append(x)
+    result["interval"] = list_tmp                                               # 分割区间
+    result["bad"] = regroup[:,1]
+    result["good"] = regroup[:,2]
+    result["bad_rate"] = result["bad"] / df[target].count()
+    result["bad_attribute"] = result["bad"] / df[target].sum()
+    result["good_attribute"] = result["good"] / (df[target].count() - df[target].sum())
+    result["WOE"] = np.log(result["good_attribute"] / result["bad_attribute"])
+    result["IV"] = (result["good_attribute"] - result["bad_attribute"]) * result["WOE"]
+    return result

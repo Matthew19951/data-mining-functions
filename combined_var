@@ -1,0 +1,44 @@
+def combined_var(df, col1, col2, K1, K2, k):
+    '''使用条件，已填补缺失值'''
+    label_uniq_cnt1 = list(df[col1].unique())           # 统计变量一内不同值，比如：  性别： 男、女
+    label_uniq_cnt2 = list(df[col2].unique())           # 统计变量二内不同值，比如：  年龄段：[18, 25), [25, 35), [35, 60]
+
+    list_unique_num1 = len(label_uniq_cnt1)             # 统计两变量内不同值的个数
+    list_unique_num2 = len(label_uniq_cnt2)
+    print('{} 的标签种类有{}'.format(col1, list_unique_num1))
+    print('{} 的标签种类有{}'.format(col2, list_unique_num2))
+
+    '''变量中不同值的个数超过K个，便对其进行分桶操作；不超过则使用原值'''
+    if list_unique_num1 >= k and list_unique_num2 >= k:
+        df['bucket_' + str(col1)] = pd.qcut(df[col1], n1)
+        df['bucket_' + str(col2)] = pd.qcut(df[col2], n2)
+        bucket_unique_cnt1 = list(set(df['bucket_' + str(col1)]))   # n1个
+        bucket_unique_cnt2 = list(set(df['bucket_' + str(col2)]))   # n2个
+        for i in bucket_unique_cnt1:
+            for j in bucket_unique_cnt2:
+                df[str(i) + '_' + str(j)] = 0                       # 创建（i*j）个新列
+                df[str(i) + '_' + str(j)].ix[(df['bucket_' + str(col1)] == i) & (df['bucket_' + str(col2)] == j)] = 1   # 满足条件的赋值为1
+
+    elif list_unique_num1 >= k and list_unique_num2 < k:
+        df['bucket_' + str(col1)] = pd.qcut(df[col1], n1)
+        bucket_unique_cnt1 = list(set(df['bucket_' + str(col1)]))   # n1个
+        for i in bucket_unique_cnt1:
+            for j in label_uniq_cnt2:
+                df[str(i) + '_' + str(j)] = 0
+                df[str(i) + '_' + str(j)].ix[(df['bucket_' + str(col1)] == i) & (df[col2] == j)] = 1
+
+    elif list_unique_num1 < k and list_unique_num2 >= k:
+        df['bucket_' + str(col2)] = pd.qcut(df[col2], n2)
+        bucket_unique_cnt2 = list(set(df['bucket_' + str(col2)]))   # n1个
+        for i in label_uniq_cnt1:
+            for j in bucket_unique_cnt2:
+                df[str(i) + '_' + str(j)] = 0
+                df[str(i) + '_' + str(j)].ix[(df[col1] == i) & (df['bucket_' + str(col2)] == j)] = 1
+
+    elif list_unique_num1 < k and list_unique_num2 < k:
+        for i in label_uniq_cnt1:
+            for j in label_uniq_cnt2:
+                df[str(i) + '_' + str(j)] = 0
+                df[str(i) + '_' + str(j)].ix[(df[col1] == i) & (df[col2] == j)] = 1
+
+    return df
